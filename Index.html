@@ -1,1 +1,150 @@
-
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#101116">
+<title>UltraWide YouTube Player</title>
+<style>
+:root{color-scheme:dark;--bg:#101116;--panel:#1a1b25;--line:#343646;--text:#f5f5fb;--muted:#b1b3c2;--accent:#ad9cff}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at top,#25243a,#101116 65%);color:var(--text);font:16px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+main{width:min(100%,980px);margin:auto;padding:20px 12px 32px}h1{font-size:clamp(1.5rem,5vw,2.1rem);margin:0 0 5px}.sub{color:var(--muted);margin:0 0 18px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:13px}
+label{display:block;font-weight:650;font-size:.9rem;margin:0 0 7px}.urlrow{display:flex;gap:8px}
+input[type=url]{flex:1;min-width:0;width:100%;padding:13px 12px;border:1px solid #48495b;border-radius:11px;background:#0e0f14;color:white;font:inherit}
+button{padding:11px 13px;border-radius:11px;border:1px solid #494b60;background:#292a38;color:white;font:600 .9rem system-ui;cursor:pointer}
+button.primary{background:var(--accent);border-color:var(--accent);color:#171324}
+button.selected{border-color:var(--accent);background:#3b3454}
+.options{display:flex;flex-wrap:wrap;gap:7px;margin-top:11px}.toggle{display:flex;align-items:center;gap:7px;margin:3px 0 0;font-weight:500}.toggle input{width:18px;height:18px;accent-color:var(--accent)}
+.status{min-height:1.35em;margin:10px 2px 0;color:#d5d0ff;font-size:.9rem;overflow-wrap:anywhere}
+.stage{position:relative;width:100%;aspect-ratio:21/9;overflow:hidden;isolation:isolate;background:#050507;border:1px solid #393a49;border-radius:13px;margin-top:14px}
+.stage.ratio16{aspect-ratio:16/9}
+.backdrop{position:absolute;inset:-12%;width:124%;height:124%;filter:blur(20px) brightness(.45) saturate(1.2);transform:scale(1.05);pointer-events:none}
+.backdrop iframe{width:100%;height:100%;border:0;pointer-events:none}
+.shade{position:absolute;inset:0;background:linear-gradient(90deg,#0005,transparent 20%,transparent 80%,#0005);pointer-events:none}
+.main-video{position:absolute;left:50%;top:50%;height:100%;width:76.1905%;transform:translate(-50%,-50%);border:0;background:#000;z-index:2}
+.stage.ratio16 .main-video{width:100%}
+.stage.crop .main-video{width:100%;height:100%}
+.stage.plain .backdrop,.stage.plain .shade{display:none}
+.empty{position:absolute;inset:0;z-index:3;display:grid;place-items:center;text-align:center;padding:20px;color:#c2c3d1;background:linear-gradient(135deg,#202132,#0c0d12)}
+.empty strong{display:block;color:white;font-size:1.1rem;margin-bottom:6px}.empty span{font-size:.9rem}
+.stage.loaded .empty{display:none}.footer{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:8px 2px;color:var(--muted);font-size:.82rem}
+.help{color:var(--muted);font-size:.86rem;margin:15px 2px}.help ul{padding-left:19px}
+@media(max-width:560px){main{padding:16px 9px 26px}.panel{padding:10px}.urlrow{flex-direction:column}.urlrow button{width:100%}.stage{border-radius:10px}.backdrop{filter:blur(13px) brightness(.4)}}
+</style>
+</head>
+<body>
+<main>
+<h1>UltraWide Player</h1>
+<p class="sub">A cinematic 21:9-style frame for YouTube videos.</p>
+<section class="panel">
+<label for="yturl">Paste a YouTube video link</label>
+<div class="urlrow">
+<input id="yturl" type="url" inputmode="url" placeholder="https://youtu.be/VIDEO_ID" autocomplete="url">
+<button class="primary" id="loadBtn" type="button">Load video</button>
+</div>
+<div class="options">
+<button type="button" class="selected" data-ratio="21">21:9 UltraWide</button>
+<button type="button" data-ratio="16">16:9 Standard</button>
+<button type="button" class="selected" data-mode="fit">Fit + backdrop</button>
+<button type="button" data-mode="plain">Black sides</button>
+<button type="button" data-mode="crop">Fill / crop</button>
+<label class="toggle"><input id="bgToggle" type="checkbox" checked> Blurred background</label>
+<button id="fullBtn" type="button">Fullscreen</button>
+</div>
+<p id="status" class="status" role="status" aria-live="polite">Ready. Paste a video link and tap Load video.</p>
+</section>
+<div id="stage" class="stage">
+<div id="backdrop" class="backdrop" aria-hidden="true"></div>
+<div class="shade" aria-hidden="true"></div>
+<div class="empty"><div><strong>Your video will appear here</strong><span>Paste a YouTube link above and tap Load video.</span></div></div>
+</div>
+<div class="footer"><span id="ratioLabel">Frame: 21:9 UltraWide</span><span>Playback uses YouTube's embedded player.</span></div>
+<div class="help"><b>What this does:</b>
+<ul>
+<li><b>Fit + backdrop</b> keeps the full video visible and fills extra width with a blurred duplicate.</li>
+<li><b>Black sides</b> keeps the full video visible without a background.</li>
+<li><b>Fill / crop</b> fills the frame but can cut off parts of the picture.</li>
+</ul>
+This is not AI outpainting. Some videos do not allow embedding. If the video area says playback is unavailable, open the video in YouTube instead. The blurred background is a separate muted embed and may not sync perfectly.</div>
+</main>
+<script>
+(function(){
+  const input=document.getElementById('yturl');
+  const stage=document.getElementById('stage');
+  const backdrop=document.getElementById('backdrop');
+  const status=document.getElementById('status');
+  const bgToggle=document.getElementById('bgToggle');
+  let currentId='';
+  function setStatus(s){status.textContent=s;}
+  function parseId(value){
+    value=value.trim();
+    if(/^[A-Za-z0-9_-]{11}$/.test(value)) return value;
+    let u; try{u=new URL(value);}catch(e){return null;}
+    const host=u.hostname.toLowerCase().replace(/^www\\./,'').replace(/^m\\./,'');
+    if(host==='youtu.be') return u.pathname.split('/').filter(Boolean)[0]||null;
+    if(['youtube.com','music.youtube.com','youtube-nocookie.com'].includes(host)){
+      if(u.pathname==='/watch') return u.searchParams.get('v');
+      const parts=u.pathname.split('/').filter(Boolean);
+      if(['embed','shorts','live','v'].includes(parts[0])) return parts[1]||null;
+    }
+    return null;
+  }
+  function createEmbed(id,isBg){
+    const f=document.createElement('iframe');
+    const params=new URLSearchParams();
+    params.set('playsinline','1'); params.set('rel','0');
+    params.set('autoplay',isBg?'1':'0'); params.set('mute',isBg?'1':'0');
+    params.set('controls',isBg?'0':'1');
+    f.src='https://www.youtube-nocookie.com/embed/'+encodeURIComponent(id)+'?'+params.toString();
+    f.title=isBg?'Muted background video':'YouTube video player';
+    f.setAttribute('allow','accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen');
+    if(!isBg) f.setAttribute('allowfullscreen','');
+    f.setAttribute('referrerpolicy','strict-origin-when-cross-origin');
+    if(isBg){f.tabIndex=-1;f.setAttribute('aria-hidden','true');}
+    return f;
+  }
+  function updateDisplay(){
+    const ratio=document.querySelector('[data-ratio].selected')?.dataset.ratio||'21';
+    const mode=document.querySelector('[data-mode].selected')?.dataset.mode||'fit';
+    stage.classList.toggle('ratio16',ratio==='16');
+    stage.classList.remove('plain','crop');
+    if(mode==='plain')stage.classList.add('plain');
+    if(mode==='crop')stage.classList.add('crop');
+    document.getElementById('ratioLabel').textContent='Frame: '+(ratio==='16'?'16:9 Standard':'21:9 UltraWide');
+    const useBg=!!currentId&&bgToggle.checked&&mode==='fit';
+    backdrop.style.display=useBg?'block':'none';
+    stage.querySelector('.shade').style.display=useBg?'block':'none';
+    backdrop.replaceChildren();
+    if(useBg)backdrop.appendChild(createEmbed(currentId,true));
+  }
+  function load(){
+    const id=parseId(input.value);
+    if(!id||!/^[A-Za-z0-9_-]{11}$/.test(id)){
+      setStatus('Could not recognize that link. Try a full YouTube URL, such as https://www.youtube.com/watch?v=XXXXXXXXXXX');
+      return;
+    }
+    currentId=id;
+    stage.querySelectorAll('.main-video').forEach(el=>el.remove());
+    const frame=createEmbed(id,false);frame.className='main-video';
+    stage.appendChild(frame);stage.classList.add('loaded');
+    updateDisplay();
+    setStatus('Video player loaded. If playback is blocked, this video may not allow embedding.');
+  }
+  document.getElementById('loadBtn').addEventListener('click',load);
+  input.addEventListener('keydown',e=>{if(e.key==='Enter')load();});
+  document.querySelectorAll('[data-ratio]').forEach(b=>b.addEventListener('click',()=>{
+    document.querySelectorAll('[data-ratio]').forEach(x=>x.classList.toggle('selected',x===b));updateDisplay();
+  }));
+  document.querySelectorAll('[data-mode]').forEach(b=>b.addEventListener('click',()=>{
+    document.querySelectorAll('[data-mode]').forEach(x=>x.classList.toggle('selected',x===b));updateDisplay();
+  }));
+  bgToggle.addEventListener('change',updateDisplay);
+  document.getElementById('fullBtn').addEventListener('click',async()=>{
+    try{if(!document.fullscreenElement)await stage.requestFullscreen();else await document.exitFullscreen();}
+    catch(e){setStatus('Fullscreen is not available in this browser preview. Try opening the HTML in Chrome.');}
+  });
+})();
+</script>
+</body>
+</html>
